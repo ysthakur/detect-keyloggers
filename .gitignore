@@ -1,3 +1,6 @@
+# Capture files
+*.pcapng
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
