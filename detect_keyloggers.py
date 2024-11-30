@@ -34,16 +34,18 @@ def find_flow(flow_id: IpFlowId) -> Optional[Flow]:
             return flow
     return None
 
-sessions = rdpcap("Liragbr.pcapng").sessions()
+sessions = rdpcap("test.pcapng").sessions()
 
-data = b""
-for packet in sessions["Other"]:
-    if "P" in packet[TCP].flags:
-        data += packet[TCP].load
+for session_name in sessions:
+    if "TCP" not in session_name:
+        continue
+    data = b""
+    for packet in sessions[session_name]:
+        if "P" in packet[TCP].flags:
+            data += packet[TCP].load
 
-print(data)
-if b"KEYLOGGERDETECTSTRING" in data:
-    print("Detected Liragbr/keylogger!")
+    if b"KEYLOGGERDETECTSTRING" in data:
+        print(f"Detected Liragbr/keylogger! {session_name}")
 
 # for packet in rdpcap("Liragbr.pcapng"):
 #     if IP not in packet:
