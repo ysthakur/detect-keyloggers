@@ -1,56 +1,139 @@
 from dataclasses import dataclass
 from typing import Optional
-from scapy.all import rdpcap, Packet, IP, TCP
+from scapy.all import rdpcap, Packet, bind_layers  # type: ignore
+from scapy.sendrecv import sniff
+from scapy.sessions import TCPSession
+from scapy.fields import StrField
 from scapy.layers import inet as scapy_layers
+from scapy.layers.inet import IP, TCP
 from pprint import pprint
 
 
 @dataclass
-class IpFlowId:
-    """A way to identify IP flows"""
+class FlowId:
+    """A way to identify flows/streams/whatever you want to call them"""
+
+    protocol: str
+    """The application layer protocol's name"""
     src_addr: str
     dst_addr: str
-
-
-@dataclass
-class TcpFlowId:
-    """A way to identify TCP connections"""
     src_port: int
     dst_port: int
-    ip: IpFlowId
 
 
 class Flow:
-    def __init__(self, id: IpFlowId, first_packet: Packet):
+    def __init__(self, id: FlowId, first_packet: Packet):
         self.id = id
         self.packets = [first_packet]
+        self.deltas: list[float] = []
+
+    def add_packet(self, packet: Packet):
+        prev = self.packets[-1]
+        self.packets.append(packet)
+        self.deltas.append(float(packet.time) - float(prev.time))
 
 
 flows: list[Flow] = []
 
-def find_flow(flow_id: IpFlowId) -> Optional[Flow]:
+
+def find_flow(flow_id: FlowId) -> Optional[Flow]:
     for flow in flows:
         if flow_id == flow.id:
             return flow
     return None
 
-sessions = rdpcap("test.pcapng").sessions()
 
-for session_name in sessions:
-    if "TCP" not in session_name:
-        continue
-    data = b""
-    for packet in sessions[session_name]:
-        if "P" in packet[TCP].flags:
-            data += packet[TCP].load
+pcap = "ftp_only.pcapng"  # "Liragbr.pcapng"
 
-    if b"KEYLOGGERDETECTSTRING" in data:
-        print(f"Detected Liragbr/keylogger! {session_name}")
+sessions = rdpcap(pcap).sessions()
 
-# for packet in rdpcap("Liragbr.pcapng"):
-#     if IP not in packet:
+# print("\n".join(sessions.keys()))
+
+# pprint(TCP(b"TYPE A"))
+
+# for session_name in sessions:
+#     if "TCP" not in session_name:
 #         continue
-#     ip_flow_data = IpFlowId(packet[IP].src, packet[IP].dst)
-#     if TCP in packet:
-#         tcp_flow_data = TcpFlowId(packet[TCP].sport, packet[TCP].dport, ip_flow_data)
-#     pprint(packet)
+#     data = b""
+#     for packet in sessions[session_name]:
+#         pprint(packet)
+#         exit(0)
+#         if "P" in packet[TCP].flags:
+#             data += packet[TCP].load
+
+#     if b"KEYLOGGERDETECTSTRING" in data:
+#         print(f"Detected Liragbr/keylogger! {session_name}")
+
+
+class SMTP(Packet):
+    name = "SMTP"
+    fields_desc = [StrField("raw", b"")]
+
+    @classmethod
+    def tcp_reassemble(cls, data: bytes, _metadata, _session):
+        return SMTP(raw=data)
+
+
+class FTPRequest(Packet):
+    """FTP control port requests"""
+
+    name = "FTP"
+    fields_desc = [StrField("cmd", b""), StrField("args", b"")]
+
+    @classmethod
+    def tcp_reassemble(cls, data: bytes, metadata, session):
+        data = data.rstrip(b"\r\n")
+        cmd, *args = data.split(b" ")
+        return FTPRequest(cmd=cmd, args=b" ".join(args))
+
+
+class SFTP(Packet):
+    name = "SFTP"
+    fields_desc = [StrField("raw", b"")]
+
+    @classmethod
+    def tcp_reassemble(cls, data: bytes, metadata, session):
+        return SFTP(raw=data)
+
+
+def detect_keylogger(flow: Flow):
+    deltas = flow.deltas[-4:]
+    mean = sum(deltas) / len(deltas)
+    variance = sum((x - mean) ** 2 for x in deltas) / len(deltas)
+    print("Variance:", variance)
+
+
+# Unencrypted
+bind_layers(TCP, SMTP, dport=25)
+# Uses SSL
+bind_layers(TCP, SMTP, dport=465)
+# Uses TLS
+bind_layers(TCP, SMTP, dport=587)
+# Control port only. Not encrypted
+bind_layers(TCP, FTPRequest, dport=21)
+bind_layers(TCP, SFTP, dport=22)
+
+RECOGNIZED_PROTOCOLS: list[type[Packet]] = [SMTP, FTPRequest, SFTP]
+
+for packet in sniff(offline=pcap, session=TCPSession):
+    for protocol in RECOGNIZED_PROTOCOLS:
+        if protocol in packet:
+            flow_id = FlowId(
+                protocol=str(protocol.name),
+                src_addr=packet[IP].src,
+                dst_addr=packet[IP].dst,
+                src_port=packet[TCP].sport,
+                dst_port=packet[TCP].dport,
+            )
+            flow = find_flow(flow_id)
+            if flow is not None:
+                flow.add_packet(packet)
+                detect_keylogger(flow)
+            else:
+                flow = Flow(flow_id, packet)
+                flows.append(flow)
+            break
+
+pprint(flows[0].packets)
+print(flows[0].deltas)
+print("done")
