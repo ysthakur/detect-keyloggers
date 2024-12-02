@@ -8,7 +8,7 @@ email = "lhacs223@gmail.com"
 password = "ghrd hvsm akvj wxxj"
 
 if "smtp" in sys.argv:
-    smtp_server = smtplib.SMTP("smtp.gmail.com", 587)
+    smtp_server = smtplib.SMTP("smtp.gmail.com", 25)
     smtp_server.starttls()
     smtp_server.login(email, password)
 

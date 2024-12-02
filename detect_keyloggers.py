@@ -87,10 +87,12 @@ class FTPRequest(Packet):
 
 
 WINDOW = 4
-DETECTION_THRESHOLD = 0.1
+DETECTION_THRESHOLD = 0.2
 
 def detect_keylogger(flow: Flow):
-    if len(flow.deltas) >= WINDOW:
+    # Some messages may be split up across multiple packets, at least with SMTP
+    deltas = [delta for delta in flow.deltas if delta < 3.0]
+    if len(deltas) >= WINDOW:
         deltas = flow.deltas[-WINDOW:]
         mean = sum(deltas) / len(deltas)
         variance = sum((x - mean) ** 2 for x in deltas) / len(deltas)
@@ -109,7 +111,7 @@ bind_layers(TCP, SMTP, dport=587)
 # Control port only. Not encrypted
 bind_layers(TCP, FTPRequest, dport=21)
 
-RECOGNIZED_PROTOCOLS: list[type[Packet]] = [SMTP, FTPRequest, SFTP]
+RECOGNIZED_PROTOCOLS: list[type[Packet]] = [SMTP, FTPRequest]
 
 # for packet in sniff(offline=pcap, session=TCPSession):
 for packet in sniff(iface="eth0", session=TCPSession):
