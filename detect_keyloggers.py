@@ -44,7 +44,7 @@ def find_flow(flow_id: FlowId) -> Optional[Flow]:
 
 pcap = "ftp_only.pcapng"  # "Liragbr.pcapng"
 
-sessions = rdpcap(pcap).sessions()
+# sessions = rdpcap(pcap).sessions()
 
 # print("\n".join(sessions.keys()))
 
