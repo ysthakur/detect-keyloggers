@@ -95,12 +95,18 @@ class SFTP(Packet):
     def tcp_reassemble(cls, data: bytes, metadata, session):
         return SFTP(raw=data)
 
+WINDOW = 4
+DETECTION_THRESHOLD = 0.1
 
 def detect_keylogger(flow: Flow):
-    deltas = flow.deltas[-4:]
-    mean = sum(deltas) / len(deltas)
-    variance = sum((x - mean) ** 2 for x in deltas) / len(deltas)
-    print("Variance:", variance)
+    if len(flow.deltas) >= WINDOW:
+        deltas = flow.deltas[-WINDOW:]
+        mean = sum(deltas) / len(deltas)
+        variance = sum((x - mean) ** 2 for x in deltas) / len(deltas)
+        print("Variance:", variance)
+        if variance < DETECTION_THRESHOLD:
+            print("Keylogger detected!", flow.id)
+            exit(1)
 
 
 # Unencrypted
@@ -115,11 +121,15 @@ bind_layers(TCP, SFTP, dport=22)
 
 RECOGNIZED_PROTOCOLS: list[type[Packet]] = [SMTP, FTPRequest, SFTP]
 
-for packet in sniff(offline=pcap, session=TCPSession):
+# for packet in sniff(offline=pcap, session=TCPSession):
+for packet in sniff(iface="eth0", session=TCPSession):
     for protocol in RECOGNIZED_PROTOCOLS:
         if protocol in packet:
+            if protocol == FTPRequest and packet[FTPRequest].cmd != b"STOR":
+                # For now, ignore anything that isn't storing data
+                continue
             flow_id = FlowId(
-                protocol=str(protocol.name),
+                protocol=str(protocol),
                 src_addr=packet[IP].src,
                 dst_addr=packet[IP].dst,
                 src_port=packet[TCP].sport,
@@ -134,6 +144,8 @@ for packet in sniff(offline=pcap, session=TCPSession):
                 flows.append(flow)
             break
 
-pprint(flows[0].packets)
-print(flows[0].deltas)
+for flow in flows:
+    print("------ Flow", flow.id, "-----")
+    print(flow.deltas)
+    pprint(flow.packets)
 print("done")
