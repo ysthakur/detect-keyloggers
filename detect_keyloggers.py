@@ -1,11 +1,34 @@
+import argparse
 from dataclasses import dataclass
 from typing import Optional
-from scapy.all import rdpcap, Packet, bind_layers  # type: ignore
+from scapy.all import Packet, bind_layers  # type: ignore
 from scapy.sendrecv import sniff
 from scapy.sessions import TCPSession
 from scapy.fields import StrField
 from scapy.layers.inet import IP, TCP
 from pprint import pprint
+
+
+class SMTP(Packet):
+    name = "SMTP"
+    fields_desc = [StrField("raw", b"")]
+
+    @classmethod
+    def tcp_reassemble(cls, data: bytes, _metadata, _session):
+        return SMTP(raw=data)
+
+
+class FTPRequest(Packet):
+    """FTP control port requests"""
+
+    name = "FTP"
+    fields_desc = [StrField("cmd", b""), StrField("args", b"")]
+
+    @classmethod
+    def tcp_reassemble(cls, data: bytes, metadata, session):
+        data = data.rstrip(b"\r\n")
+        cmd, *args = data.split(b" ")
+        return FTPRequest(cmd=cmd, args=b" ".join(args))
 
 
 @dataclass
@@ -42,50 +65,6 @@ def find_flow(flow_id: FlowId) -> Optional[Flow]:
     return None
 
 
-pcap = "ftp_only.pcapng"  # "Liragbr.pcapng"
-
-# sessions = rdpcap(pcap).sessions()
-
-# print("\n".join(sessions.keys()))
-
-# pprint(TCP(b"TYPE A"))
-
-# for session_name in sessions:
-#     if "TCP" not in session_name:
-#         continue
-#     data = b""
-#     for packet in sessions[session_name]:
-#         pprint(packet)
-#         exit(0)
-#         if "P" in packet[TCP].flags:
-#             data += packet[TCP].load
-
-#     if b"KEYLOGGERDETECTSTRING" in data:
-#         print(f"Detected Liragbr/keylogger! {session_name}")
-
-
-class SMTP(Packet):
-    name = "SMTP"
-    fields_desc = [StrField("raw", b"")]
-
-    @classmethod
-    def tcp_reassemble(cls, data: bytes, _metadata, _session):
-        return SMTP(raw=data)
-
-
-class FTPRequest(Packet):
-    """FTP control port requests"""
-
-    name = "FTP"
-    fields_desc = [StrField("cmd", b""), StrField("args", b"")]
-
-    @classmethod
-    def tcp_reassemble(cls, data: bytes, metadata, session):
-        data = data.rstrip(b"\r\n")
-        cmd, *args = data.split(b" ")
-        return FTPRequest(cmd=cmd, args=b" ".join(args))
-
-
 WINDOW = 4
 DETECTION_THRESHOLD = 0.2
 
@@ -93,28 +72,15 @@ def detect_keylogger(flow: Flow):
     # Some messages may be split up across multiple packets, at least with SMTP
     deltas = [delta for delta in flow.deltas if delta < 3.0]
     if len(deltas) >= WINDOW:
-        deltas = flow.deltas[-WINDOW:]
+        deltas = deltas[-WINDOW:]
         mean = sum(deltas) / len(deltas)
         variance = sum((x - mean) ** 2 for x in deltas) / len(deltas)
         print("Variance:", variance)
         if variance < DETECTION_THRESHOLD:
             print("Keylogger detected!", flow.id)
-            exit(1)
+            exit()
 
-
-# Unencrypted
-bind_layers(TCP, SMTP, dport=25)
-# Uses SSL
-bind_layers(TCP, SMTP, dport=465)
-# Uses TLS
-bind_layers(TCP, SMTP, dport=587)
-# Control port only. Not encrypted
-bind_layers(TCP, FTPRequest, dport=21)
-
-RECOGNIZED_PROTOCOLS: list[type[Packet]] = [SMTP, FTPRequest]
-
-# for packet in sniff(offline=pcap, session=TCPSession):
-for packet in sniff(iface="eth0", session=TCPSession):
+def process_packet(packet: Packet):
     for protocol in RECOGNIZED_PROTOCOLS:
         if protocol in packet:
             if protocol == FTPRequest and packet[FTPRequest].cmd != b"STOR":
@@ -135,6 +101,44 @@ for packet in sniff(iface="eth0", session=TCPSession):
                 flow = Flow(flow_id, packet)
                 flows.append(flow)
             break
+
+
+# Unencrypted
+bind_layers(TCP, SMTP, dport=25)
+# Uses SSL
+bind_layers(TCP, SMTP, dport=465)
+# Uses TLS
+bind_layers(TCP, SMTP, dport=587)
+# Control port only. Not encrypted
+bind_layers(TCP, FTPRequest, dport=21)
+
+RECOGNIZED_PROTOCOLS: list[type[Packet]] = [SMTP, FTPRequest]
+
+parser = argparse.ArgumentParser(
+    prog="detect_keyloggers", description="""Either --file or --iface must be given"""
+)
+parser.add_argument("-f", "--file", help=".pcap or .pcapng file to get packets from")
+parser.add_argument("-i", "--iface", help="Interface to sniff")
+
+args = parser.parse_args()
+
+if args.file and args.iface:
+    print("Only one of --file and --iface should be provided")
+    exit(1)
+
+sniff_args = {
+    "prn": process_packet,
+    "session": TCPSession,
+    "store": 0
+}
+
+if args.file:
+    sniff(offline=args.file, **sniff_args)
+elif args.iface:
+    sniff(iface=args.iface, **sniff_args)
+else:
+    print("Either --file or --iface must be provided")
+    exit(1)
 
 for flow in flows:
     print("------ Flow", flow.id, "-----")
