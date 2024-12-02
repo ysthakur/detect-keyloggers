@@ -4,7 +4,6 @@ from scapy.all import rdpcap, Packet, bind_layers  # type: ignore
 from scapy.sendrecv import sniff
 from scapy.sessions import TCPSession
 from scapy.fields import StrField
-from scapy.layers import inet as scapy_layers
 from scapy.layers.inet import IP, TCP
 from pprint import pprint
 
@@ -87,14 +86,6 @@ class FTPRequest(Packet):
         return FTPRequest(cmd=cmd, args=b" ".join(args))
 
 
-class SFTP(Packet):
-    name = "SFTP"
-    fields_desc = [StrField("raw", b"")]
-
-    @classmethod
-    def tcp_reassemble(cls, data: bytes, metadata, session):
-        return SFTP(raw=data)
-
 WINDOW = 4
 DETECTION_THRESHOLD = 0.1
 
@@ -117,7 +108,6 @@ bind_layers(TCP, SMTP, dport=465)
 bind_layers(TCP, SMTP, dport=587)
 # Control port only. Not encrypted
 bind_layers(TCP, FTPRequest, dport=21)
-bind_layers(TCP, SFTP, dport=22)
 
 RECOGNIZED_PROTOCOLS: list[type[Packet]] = [SMTP, FTPRequest, SFTP]
 
