@@ -132,7 +132,7 @@ def detect_keylogger(flow: Flow):
         data = "".join(packet[TCP].load for packet in flow.packets)
         print(f"Full string: {data}")
         if detect_string in data:
-            print("Liragbr/keylogger detected!", flow.id)
+            print("---\nLiragbr/keylogger detected!\n---\n", flow.id)
             exit()
         return
 
@@ -144,7 +144,7 @@ def detect_keylogger(flow: Flow):
         variance = sum((x - mean) ** 2 for x in deltas) / len(deltas)
         print("Variance:", variance)
         if variance < detect_threshold:
-            print("Keylogger detected!", flow.id)
+            print("---\nKeylogger detected!\n", flow.id)
             exit()
 
 
