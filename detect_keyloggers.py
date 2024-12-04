@@ -6,7 +6,8 @@ from scapy.sendrecv import sniff
 from scapy.sessions import TCPSession
 from scapy.fields import StrField
 from scapy.layers.inet import IP, TCP
-from pprint import pprint
+from scapy.layers.inet6 import IPv6
+# from pprint import pprint
 
 conf.use_pcap = True
 conf.use_npcap = True
@@ -157,12 +158,11 @@ def process_packet(packet: Packet):
             if protocol == TCP and "P" not in packet[TCP].flags:
                 # Liragbr/keylogger sets the push flag when sending keys
                 continue
-            if IP not in packet:
-                print(packet)
+            ip_layer = packet[IP] if IP in packet else packet[IPv6]
             flow_id = FlowId(
                 protocol=str(packet.getlayer(protocol).name),
-                src_addr=packet[IP].src,
-                dst_addr=packet[IP].dst,
+                src_addr=ip_layer.src,
+                dst_addr=ip_layer.dst,
                 # src_port=packet[TCP].sport,
                 dst_port=packet[TCP].dport,
             )
