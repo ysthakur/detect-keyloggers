@@ -160,7 +160,10 @@ def process_packet(packet: Packet):
         ip_layer = packet[IPv6]
     else:
         return
-    if ip_layer.sport == HTTPS_PORT or ip_layer.dport == HTTPS_PORT:
+
+    if TCP not in packet:
+        return  # We're currently only looking at protocols based on TCP
+    if packet[TCP].sport == HTTPS_PORT or packet[TCP].dport == HTTPS_PORT:
         # Ignore all the HTTPS messages. Should also do this for other common protocols
         return
     for protocol in RECOGNIZED_PROTOCOLS:
