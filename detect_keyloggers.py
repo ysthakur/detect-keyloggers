@@ -1,13 +1,14 @@
 import argparse
 from dataclasses import dataclass
 from typing import Optional
-from scapy.all import Packet, bind_layers  # type: ignore
+from scapy.all import Packet, bind_layers, conf  # type: ignore
 from scapy.sendrecv import sniff
 from scapy.sessions import TCPSession
 from scapy.fields import StrField
 from scapy.layers.inet import IP, TCP
 from pprint import pprint
 
+conf.use_npcap = True
 
 class SMTP(Packet):
     name = "SMTP"
