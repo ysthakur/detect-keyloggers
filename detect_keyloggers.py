@@ -17,7 +17,7 @@ class SMTP(Packet):
     fields_desc = [StrField("raw", b"")]
 
     @classmethod
-    def tcp_reassemble(cls, data: bytes, _metadata, _session):
+    def tcp_reassemble(cls, data: bytes, metadata, session):  # type: ignore
         return SMTP(raw=data)
 
 
@@ -28,7 +28,7 @@ class FTPRequest(Packet):
     fields_desc = [StrField("cmd", b""), StrField("args", b"")]
 
     @classmethod
-    def tcp_reassemble(cls, data: bytes, metadata, session):
+    def tcp_reassemble(cls, data: bytes, metadata, session):  # type: ignore
         data = data.rstrip(b"\r\n")
         cmd, *args = data.split(b" ")
         return FTPRequest(cmd=cmd, args=b" ".join(args))
@@ -42,7 +42,7 @@ class FlowId:
     """The application layer protocol's name"""
     src_addr: str
     dst_addr: str
-    src_port: int
+    # src_port: int
     dst_port: int
 
 
@@ -143,7 +143,7 @@ def detect_keylogger(flow: Flow):
         mean = sum(deltas) / len(deltas)
         variance = sum((x - mean) ** 2 for x in deltas) / len(deltas)
         print("Variance:", variance)
-        if variance < DETECTION_THRESHOLD:
+        if variance < detect_threshold:
             print("Keylogger detected!", flow.id)
             exit()
 
@@ -161,7 +161,7 @@ def process_packet(packet: Packet):
                 protocol=str(packet.getlayer(protocol).name),
                 src_addr=packet[IP].src,
                 dst_addr=packet[IP].dst,
-                src_port=packet[TCP].sport,
+                # src_port=packet[TCP].sport,
                 dst_port=packet[TCP].dport,
             )
             flow = find_flow(flow_id)
