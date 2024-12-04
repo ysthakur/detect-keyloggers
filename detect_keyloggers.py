@@ -65,14 +65,76 @@ def find_flow(flow_id: FlowId) -> Optional[Flow]:
     return None
 
 
-WINDOW = 4
-DETECTION_THRESHOLD = 0.2
+# Unencrypted
+bind_layers(TCP, SMTP, dport=25)
+# Uses SSL
+bind_layers(TCP, SMTP, dport=465)
+# Uses TLS
+bind_layers(TCP, SMTP, dport=587)
+# Control port only. Not encrypted
+bind_layers(TCP, FTPRequest, dport=21)
+
+RECOGNIZED_PROTOCOLS: list[type[Packet]] = [SMTP, FTPRequest, TCP]
+
+parser = argparse.ArgumentParser(
+    prog="detect_keyloggers",
+    description="""Provide either --file or --iface, e.g., python detect_keyloggers.py -i eth0""",
+)
+parser.add_argument("-f", "--file", help=".pcap or .pcapng file to get packets from")
+parser.add_argument("-i", "--iface", help="Interface to sniff")
+parser.add_argument(
+    "-w",
+    "--window",
+    help="How many previous packets to look at",
+    default=3,
+    type=int,
+)
+parser.add_argument(
+    "-v",
+    "--variance",
+    help="Maximum variance in consecutive delay latencies to flag a packet",
+    default=0.2,
+    type=float,
+)
+parser.add_argument(
+    "-I",
+    "--ignore-interval",
+    help="Ignore a packet sent these many seconds after the previous one",
+    default=0.2,
+    type=float,
+)
+parser.add_argument(
+    "-s",
+    "--detect-string",
+    help="String used to detect Liragbr/keylogger, which sends messages unencrypted",
+    default="keyloggerdetect",
+)
+args = parser.parse_args()
+
+if args.file and args.iface:
+    print("Only one of --file and --iface should be provided")
+    parser.print_help()
+    parser.exit(1)
+
+window: int = args.window
+detect_threshold: float = args.variance
+ignore_interval: float = args.ignore_interval
+detect_string: str = args.detect_string
+
 
 def detect_keylogger(flow: Flow):
+    if flow.id.protocol == "TCP":
+        # Liragbr/keylogger is detected based on packet contents, not deltas
+        data = "".join(packet[TCP].load for packet in flow.packets)
+        if detect_string in data:
+            print("Liragbr/keylogger detected!", flow.id)
+            exit()
+        return
+
     # Some messages may be split up across multiple packets, at least with SMTP
-    deltas = [delta for delta in flow.deltas if delta < 3.0]
-    if len(deltas) >= WINDOW:
-        deltas = deltas[-WINDOW:]
+    deltas = [delta for delta in flow.deltas if delta < ignore_interval]
+    if len(deltas) >= window:
+        deltas = deltas[-window:]
         mean = sum(deltas) / len(deltas)
         variance = sum((x - mean) ** 2 for x in deltas) / len(deltas)
         print("Variance:", variance)
@@ -80,14 +142,18 @@ def detect_keylogger(flow: Flow):
             print("Keylogger detected!", flow.id)
             exit()
 
+
 def process_packet(packet: Packet):
     for protocol in RECOGNIZED_PROTOCOLS:
         if protocol in packet:
             if protocol == FTPRequest and packet[FTPRequest].cmd != b"STOR":
                 # For now, ignore anything that isn't storing data
                 continue
+            if protocol == TCP and "P" not in packet[TCP].flags:
+                # Liragbr/keylogger sets the push flag when sending keys
+                continue
             flow_id = FlowId(
-                protocol=str(protocol),
+                protocol=str(packet.getlayer(protocol).name),
                 src_addr=packet[IP].src,
                 dst_addr=packet[IP].dst,
                 src_port=packet[TCP].sport,
@@ -103,42 +169,14 @@ def process_packet(packet: Packet):
             break
 
 
-# Unencrypted
-bind_layers(TCP, SMTP, dport=25)
-# Uses SSL
-bind_layers(TCP, SMTP, dport=465)
-# Uses TLS
-bind_layers(TCP, SMTP, dport=587)
-# Control port only. Not encrypted
-bind_layers(TCP, FTPRequest, dport=21)
-
-RECOGNIZED_PROTOCOLS: list[type[Packet]] = [SMTP, FTPRequest]
-
-parser = argparse.ArgumentParser(
-    prog="detect_keyloggers", description="""Either --file or --iface must be given"""
-)
-parser.add_argument("-f", "--file", help=".pcap or .pcapng file to get packets from")
-parser.add_argument("-i", "--iface", help="Interface to sniff")
-
-args = parser.parse_args()
-
-if args.file and args.iface:
-    print("Only one of --file and --iface should be provided")
-    exit(1)
-
-sniff_args = {
-    "prn": process_packet,
-    "session": TCPSession,
-    "store": 0
-}
-
 if args.file:
-    sniff(offline=args.file, **sniff_args)
+    sniff(offline=args.file, prn=process_packet, session=TCPSession, store=0)
 elif args.iface:
-    sniff(iface=args.iface, **sniff_args)
+    sniff(iface=args.iface, prn=process_packet, session=TCPSession, store=0)
 else:
     print("Either --file or --iface must be provided")
-    exit(1)
+    parser.print_help()
+    parser.exit(1)
 
 for flow in flows:
     print("------ Flow", flow.id, "-----")
