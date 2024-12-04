@@ -12,6 +12,7 @@ from scapy.layers.inet6 import IPv6
 conf.use_pcap = True
 conf.use_npcap = True
 
+HTTPS_PORT = 443
 
 class SMTP(Packet):
     name = "SMTP"
@@ -150,6 +151,15 @@ def detect_keylogger(flow: Flow):
 
 
 def process_packet(packet: Packet):
+    if IP in packet:
+        ip_layer = packet[IP]
+    elif IPv6 in packet:
+        ip_layer = packet[IPv6]
+    else:
+        return
+    if ip_layer.sport == HTTPS_PORT or ip_layer.dport == HTTPS_PORT:
+        # Ignore all the HTTPS messages. Should also do this for other common protocols
+        return
     for protocol in RECOGNIZED_PROTOCOLS:
         if protocol in packet:
             if protocol == FTPRequest and packet[FTPRequest].cmd != b"STOR":
@@ -158,7 +168,6 @@ def process_packet(packet: Packet):
             if protocol == TCP and "P" not in packet[TCP].flags:
                 # Liragbr/keylogger sets the push flag when sending keys
                 continue
-            ip_layer = packet[IP] if IP in packet else packet[IPv6]
             flow_id = FlowId(
                 protocol=str(packet.getlayer(protocol).name),
                 src_addr=ip_layer.src,
