@@ -7,12 +7,15 @@ from scapy.sessions import TCPSession
 from scapy.fields import StrField
 from scapy.layers.inet import IP, TCP
 from scapy.layers.inet6 import IPv6
+from scapy.packet import Raw
+
 # from pprint import pprint
 
 conf.use_pcap = True
 conf.use_npcap = True
 
 HTTPS_PORT = 443
+
 
 class SMTP(Packet):
     name = "SMTP"
@@ -79,7 +82,7 @@ bind_layers(TCP, SMTP, dport=587)
 # Control port only. Not encrypted
 bind_layers(TCP, FTPRequest, dport=21)
 
-RECOGNIZED_PROTOCOLS: list[type[Packet]] = [SMTP, FTPRequest, TCP]
+RECOGNIZED_PROTOCOLS: list[type[Packet]] = [SMTP, FTPRequest, Raw]
 
 parser = argparse.ArgumentParser(prog="detect_keyloggers")
 parser.add_argument("-f", "--file", help=".pcap or .pcapng file to get packets from")
@@ -129,9 +132,9 @@ detect_string: str = args.detect_string
 
 
 def detect_keylogger(flow: Flow):
-    if flow.id.protocol == "TCP":
+    if flow.id.protocol == "Raw":
         # Liragbr/keylogger is detected based on packet contents, not deltas
-        data = b"".join(packet[TCP].load for packet in flow.packets)
+        data = b"".join(packet[Raw].load for packet in flow.packets)
         if detect_string in data.decode(errors="ignore").lower():
             print(f"Full string: {data}")
             print("---\nLiragbr/keylogger detected!\n---\n", flow.id)
@@ -165,7 +168,7 @@ def process_packet(packet: Packet):
             if protocol == FTPRequest and packet[FTPRequest].cmd != b"STOR":
                 # For now, ignore anything that isn't storing data
                 continue
-            if protocol == TCP and "P" not in packet[TCP].flags:
+            if protocol == Raw and (TCP not in packet or "P" not in packet[TCP].flags):
                 # Liragbr/keylogger sets the push flag when sending keys
                 continue
             flow_id = FlowId(
