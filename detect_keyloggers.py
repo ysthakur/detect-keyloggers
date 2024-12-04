@@ -182,8 +182,8 @@ elif args.iface:
 else:
     sniff(prn=process_packet, session=TCPSession, store=0)
 
-# for flow in flows:
-#     print("------ Flow", flow.id, "-----")
-#     print(flow.deltas)
-#     pprint(flow.packets)
+for flow in flows:
+    print("------ Flow", flow.id, "-----")
+    print(flow.deltas)
+    # pprint(flow.packets)
 print("done")
