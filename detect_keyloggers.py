@@ -109,7 +109,7 @@ parser.add_argument(
     "-I",
     "--ignore-interval",
     help="Ignore a packet sent these many seconds after the previous one",
-    default=0.2,
+    default=3.0,
     type=float,
 )
 parser.add_argument(
@@ -142,7 +142,7 @@ def detect_keylogger(flow: Flow):
         return
 
     # Some messages may be split up across multiple packets, at least with SMTP
-    deltas = [delta for delta in flow.deltas if delta < ignore_interval]
+    deltas = [delta for delta in flow.deltas if delta > ignore_interval]
     if len(deltas) >= window:
         deltas = deltas[-window:]
         mean = sum(deltas) / len(deltas)
