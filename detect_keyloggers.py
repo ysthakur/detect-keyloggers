@@ -157,6 +157,8 @@ def process_packet(packet: Packet):
             if protocol == TCP and "P" not in packet[TCP].flags:
                 # Liragbr/keylogger sets the push flag when sending keys
                 continue
+            if IP not in packet:
+                print(packet)
             flow_id = FlowId(
                 protocol=str(packet.getlayer(protocol).name),
                 src_addr=packet[IP].src,
