@@ -10,6 +10,7 @@ from pprint import pprint
 
 conf.use_npcap = True
 
+
 class SMTP(Packet):
     name = "SMTP"
     fields_desc = [StrField("raw", b"")]
@@ -77,12 +78,13 @@ bind_layers(TCP, FTPRequest, dport=21)
 
 RECOGNIZED_PROTOCOLS: list[type[Packet]] = [SMTP, FTPRequest, TCP]
 
-parser = argparse.ArgumentParser(
-    prog="detect_keyloggers",
-    description="""Provide either --file or --iface, e.g., python detect_keyloggers.py -i eth0""",
-)
+parser = argparse.ArgumentParser(prog="detect_keyloggers")
 parser.add_argument("-f", "--file", help=".pcap or .pcapng file to get packets from")
-parser.add_argument("-i", "--iface", help="Interface to sniff")
+parser.add_argument(
+    "-i",
+    "--iface",
+    help="Interface to sniff. If not provided, all interfaces will be sniffed",
+)
 parser.add_argument(
     "-w",
     "--window",
@@ -177,9 +179,7 @@ if args.file:
 elif args.iface:
     sniff(iface=args.iface, prn=process_packet, session=TCPSession, store=0)
 else:
-    print("Either --file or --iface must be provided")
-    parser.print_help()
-    parser.exit(1)
+    sniff(prn=process_packet, session=TCPSession, store=0)
 
 for flow in flows:
     print("------ Flow", flow.id, "-----")
