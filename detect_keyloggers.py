@@ -8,6 +8,7 @@ from scapy.fields import StrField
 from scapy.layers.inet import IP, TCP
 from pprint import pprint
 
+conf.use_pcap = True
 conf.use_npcap = True
 
 
