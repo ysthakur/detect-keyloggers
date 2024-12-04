@@ -129,9 +129,9 @@ detect_string: str = args.detect_string
 def detect_keylogger(flow: Flow):
     if flow.id.protocol == "TCP":
         # Liragbr/keylogger is detected based on packet contents, not deltas
-        data = "".join(packet[TCP].load for packet in flow.packets)
+        data = b"".join(packet[TCP].load for packet in flow.packets)
         print(f"Full string: {data}")
-        if detect_string in data:
+        if detect_string.encode() in data:
             print("---\nLiragbr/keylogger detected!\n---\n", flow.id)
             exit()
         return
